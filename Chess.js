@@ -16,6 +16,7 @@ const initBoard = () => {
 const inBounds = (r,c) => r>=0&&r<8&&c>=0&&c<8;
 const color = (p) => p?p[0]:null;
 const opponent = (c) => c==="w"?"b":"w";
+const fmt = (s) => { const m=Math.floor(s/60); const r=s%60; return String(m).padStart(2,"0")+":"+String(r).padStart(2,"0"); };
 
 function getRawMoves(board, r, c, state) {
   const p = board[r][c]; if(!p) return [];
@@ -112,9 +113,22 @@ export default function Chess() {
   const [capturedB,setCapturedB]=useState([]);
   const [mode,setMode]=useState("menu");
   const [playerColor,setPlayerColor]=useState("w");
+  const [timeW,setTimeW]=useState(600);
+  const [timeB,setTimeB]=useState(600);
+  const [timerActive,setTimerActive]=useState(false);
   const aiRef=useRef(null);
+  const timerRef=useRef(null);
 
-  const resetGame=useCallback(()=>{ setBoard(initBoard());setSelected(null);setLegalMoves([]);setTurn("w");setGameState({castling:{wK:true,wQ:true,bK:true,bQ:true},enPassant:null});setStatus("playing");setAiThinking(false);setPromotionPending(null);setLastMove(null);setCapturedW([]);setCapturedB([]); },[]);
+  const resetGame=useCallback(()=>{ setBoard(initBoard());setSelected(null);setLegalMoves([]);setTurn("w");setGameState({castling:{wK:true,wQ:true,bK:true,bQ:true},enPassant:null});setStatus("playing");setAiThinking(false);setPromotionPending(null);setLastMove(null);setCapturedW([]);setCapturedB([]);setTimeW(600);setTimeB(600);setTimerActive(false); },[]);
+
+  useEffect(()=>{
+    if(!timerActive||status!=="playing"&&status!=="check")return;
+    timerRef.current=setInterval(()=>{
+      if(turn==="w") setTimeW(t=>{ if(t<=1){setStatus("checkmate");setTimerActive(false);return 0;} return t-1; });
+      else setTimeB(t=>{ if(t<=1){setStatus("checkmate");setTimerActive(false);return 0;} return t-1; });
+    },1000);
+    return()=>clearInterval(timerRef.current);
+  },[turn,timerActive,status]);
 
   const executeMove=useCallback((board,from,to,state,promotion="Q")=>{
     const [fr,fc]=from;const [tr,tc,flag]=to;const p=board[fr][fc];const col=color(p);
@@ -131,6 +145,7 @@ export default function Chess() {
     const nextTurn=opponent(col);
     const newStatus=getGameStatus(nb,nextTurn,newState);
     setBoard(nb);setGameState(newState);setTurn(nextTurn);setStatus(newStatus);setLastMove({from,to:[tr,tc]});setSelected(null);setLegalMoves([]);
+    setTimerActive(true);
     return{nb,newState,nextTurn,newStatus};
   },[]);
 
@@ -161,7 +176,11 @@ export default function Chess() {
 
   const statusText=()=>{
     if(aiThinking)return"ИИ думает...";
-    if(status==="checkmate")return turn===playerColor?"😔 Вы проиграли":"🏆 Вы победили!";
+    if(status==="checkmate"){
+      if(timeW===0)return"⏰ Время вышло! ИИ победил";
+      if(timeB===0)return"⏰ Время вышло! Вы победили!";
+      return turn===playerColor?"😔 Вы проиграли":"🏆 Вы победили!";
+    }
     if(status==="stalemate")return"🤝 Ничья";
     if(status==="check")return turn===playerColor?"⚠️ Вам шах!":"⚠️ Шах ИИ";
     return turn===playerColor?"Ваш ход":"Ход ИИ";
@@ -177,7 +196,7 @@ export default function Chess() {
           <p style={{margin:"0 0 16px",fontSize:14,color:"#8a8480"}}>Выберите цвет</p>
           <div style={{display:"flex",gap:12,justifyContent:"center",marginBottom:28}}>
             {[["w","♙","Белые","Ходите первым"],["b","♟","Чёрные","ИИ ходит первым"]].map(([c,sym,name,hint])=>(
-              <button key={c} onClick={()=>setPlayerColor(c)} style={{flex:1,padding:"16px 12px",borderRadius:12,border:`2px solid ${playerColor===c?"#d4af37":"rgba(255,255,255,0.1)"}`,background:playerColor===c?"rgba(212,175,55,0.1)":"transparent",color:playerColor===c?"#d4af37":"#8a8480",cursor:"pointer"}}>
+              <button key={c} onClick={()=>setPlayerColor(c)} style={{flex:1,padding:"16px 12px",borderRadius:12,border:2px solid ${playerColor===c?"#d4af37":"rgba(255,255,255,0.1)"},background:playerColor===c?"rgba(212,175,55,0.1)":"transparent",color:playerColor===c?"#d4af37":"#8a8480",cursor:"pointer"}}>
                 <div style={{fontSize:28,marginBottom:4}}>{sym}</div>
                 <div style={{fontSize:13,fontWeight:600}}>{name}</div>
                 <div style={{fontSize:11,opacity:0.7,marginTop:2}}>{hint}</div>
@@ -197,9 +216,18 @@ export default function Chess() {
         <div style={{fontSize:14,color:"#d4af37",fontWeight:600}}>{statusText()}</div>
         <button onClick={resetGame} style={{background:"transparent",border:"1px solid rgba(255,255,255,0.1)",color:"#6b6660",padding:"6px 14px",borderRadius:8,cursor:"pointer",fontSize:13}}>Новая</button>
       </div>
+
+      {/* Таймер ИИ */}
+      <div style={{display:"flex",justifyContent:"center",width:"100%",maxWidth:520}}>
+        <div style={{background:turn!==playerColor&&timerActive?"rgba(212,175,55,0.15)":"rgba(255,255,255,0.03)",border:1px solid ${turn!==playerColor&&timerActive?"#d4af37":"rgba(255,255,255,0.08)"},borderRadius:12,padding:"8px 24px",fontSize:24,fontWeight:700,color:timeB<30?"#e74c3c":turn!==playerColor&&timerActive?"#d4af37":"#6b6660",transition:"all 0.3s"}}>
+          {playerColor==="w"?fmt(timeB):fmt(timeW)}
+        </div>
+      </div>
+
       <div style={{display:"flex",flexWrap:"wrap",gap:2,width:"100%",maxWidth:520,minHeight:24}}>
         {capturedW.map((p,i)=><span key={i} style={{fontSize:16,opacity:0.6}}>{PIECES[p]}</span>)}
       </div>
+
       <div style={{position:"relative",borderRadius:8,overflow:"hidden",boxShadow:"0 20px 60px rgba(0,0,0,0.8)"}}>
         {boardToRender.map((row,vr)=>(
           <div key={vr} style={{display:"flex"}}>
@@ -228,13 +256,22 @@ export default function Chess() {
         {aiThinking&&<div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.15)",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{background:"rgba(13,13,15,0.9)",border:"1px solid rgba(212,175,55,0.3)",borderRadius:10,padding:"12px 24px",color:"#d4af37",fontSize:14,fontWeight:600}}>♟ ИИ думает...</div></div>}
         {(status==="checkmate"||status==="stalemate")&&<div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.75)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}>
           <div style={{fontSize:48}}>{status==="checkmate"?(turn===playerColor?"😔":"🏆"):"🤝"}</div>
-          <div style={{fontSize:22,fontWeight:700,color:"#d4af37"}}>{status==="stalemate"?"Ничья":turn===playerColor?"Вы проиграли":"Вы победили!"}</div>
+          <div style={{fontSize:22,fontWeight:700,color:"#d4af37"}}>{statusText()}</div>
           <button onClick={resetGame} style={{background:"linear-gradient(135deg,#d4af37,#b8860b)",color:"#0d0d0f",border:"none",padding:"10px 28px",borderRadius:8,fontWeight:700,cursor:"pointer",fontSize:15}}>Играть снова</button>
         </div>}
       </div>
+
       <div style={{display:"flex",flexWrap:"wrap",gap:2,width:"100%",maxWidth:520,minHeight:24}}>
         {capturedB.map((p,i)=><span key={i} style={{fontSize:16,opacity:0.6}}>{PIECES[p]}</span>)}
       </div>
+
+      {/* Таймер игрока */}
+      <div style={{display:"flex",justifyContent:"center",width:"100%",maxWidth:520}}>
+        <div style={{background:turn===playerColor&&timerActive?"rgba(212,175,55,0.15)":"rgba(255,255,255,0.03)",border:1px solid ${turn===playerColor&&timerActive?"#d4af37":"rgba(255,255,255,0.08)"},borderRadius:12,padding:"8px 24px",fontSize:24,fontWeight:700,color:timeW<30?"#e74c3c":turn===playerColor&&timerActive?"#d4af37":"#6b6660",transition:"all 0.3s"}}>
+          {playerColor==="w"?fmt(timeW):fmt(timeB)}
+        </div>
+      </div>
+
       {promotionPending&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100}}>
         <div style={{background:"#1a1a1f",border:"1px solid rgba(212,175,55,0.3)",borderRadius:16,padding:24,textAlign:"center"}}>
           <p style={{margin:"0 0 16px",color:"#d4af37",fontWeight:600}}>Выберите фигуру</p>
